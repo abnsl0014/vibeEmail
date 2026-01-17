@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+dist-electron/
+out/
+
+# Environment (IMPORTANT: never commit these!)
+.env
+.env.local
+*.local
+backend/.env
+render-backend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache
+.cache/
+*.tsbuildinfo
