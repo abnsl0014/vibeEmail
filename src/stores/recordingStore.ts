@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { AudioSource, RecordingState } from '../types/audio'
 import { TranscriptionSegment } from '../types/note'
+import { MeetingMetadata } from '../types/meeting'
 
 interface RecordingStoreState extends RecordingState {
   audioSource: AudioSource
@@ -8,6 +9,14 @@ interface RecordingStoreState extends RecordingState {
   selectedSystemAudioId: string | null
   liveTranscript: string
   segments: TranscriptionSegment[]
+
+  // Meeting context for scheduled recordings
+  currentMeetingId: string | null
+  currentMeetingTitle: string | null
+  pendingMeeting: MeetingMetadata | null  // Meeting waiting to be auto-started
+
+  // Stop recording trigger (for stopping from other pages)
+  stopRequested: boolean
 
   setIsRecording: (recording: boolean) => void
   setIsPaused: (paused: boolean) => void
@@ -19,6 +28,10 @@ interface RecordingStoreState extends RecordingState {
   setLiveTranscript: (text: string) => void
   addSegment: (segment: TranscriptionSegment) => void
   clearSegments: () => void
+  setCurrentMeeting: (id: string | null, title: string | null) => void
+  setPendingMeeting: (meeting: MeetingMetadata | null) => void
+  requestStop: () => void
+  clearStopRequest: () => void
   reset: () => void
 }
 
@@ -31,7 +44,11 @@ const initialState = {
   selectedMicId: null,
   selectedSystemAudioId: null,
   liveTranscript: '',
-  segments: [] as TranscriptionSegment[]
+  segments: [] as TranscriptionSegment[],
+  currentMeetingId: null,
+  currentMeetingTitle: null,
+  pendingMeeting: null,
+  stopRequested: false,
 }
 
 export const useRecordingStore = create<RecordingStoreState>((set) => ({
@@ -49,5 +66,9 @@ export const useRecordingStore = create<RecordingStoreState>((set) => ({
     segments: [...state.segments, segment]
   })),
   clearSegments: () => set({ segments: [], liveTranscript: '' }),
+  setCurrentMeeting: (id, title) => set({ currentMeetingId: id, currentMeetingTitle: title }),
+  setPendingMeeting: (meeting) => set({ pendingMeeting: meeting }),
+  requestStop: () => set({ stopRequested: true }),
+  clearStopRequest: () => set({ stopRequested: false }),
   reset: () => set(initialState)
 }))

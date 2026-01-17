@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import RecordingPanel from './components/recording/RecordingPanel'
-import NotesList from './components/notes/NotesList'
-import NoteViewer from './components/notes/NoteViewer'
+import MeetingsList from './components/meetings/MeetingsList'
+import MeetingViewer from './components/meetings/MeetingViewer'
 import SetupWizard from './components/setup/SetupWizard'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { RecordingProvider } from './contexts/RecordingContext'
 import { useAppStore } from './stores/appStore'
 
 function AppContent() {
@@ -102,14 +103,16 @@ function AppContent() {
 
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<RecordingPanel />} />
-          <Route path="/notes" element={<NotesList />} />
-          <Route path="/notes/:id" element={<NoteViewer />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
+      <RecordingProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<RecordingPanel />} />
+            <Route path="/meetings" element={<MeetingsList />} />
+            <Route path="/meetings/:id" element={<MeetingViewer />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+      </RecordingProvider>
     </BrowserRouter>
   )
 }

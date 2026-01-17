@@ -12,6 +12,9 @@ import numpy as np
 from core.transcriber import transcriber
 from services.model_manager import model_manager
 from services.notes_service import notes_service
+from services.meetings_service import meetings_service
+from services.summary_service import get_summary_service, MODEL_NAME as SUMMARY_MODEL_NAME
+from services.calendar_service import get_calendar_service
 
 router = APIRouter()
 
@@ -47,6 +50,44 @@ class NoteResponse(BaseModel):
     audio_source: str
     word_count: int
     transcription: dict
+
+# Meeting Pydantic models
+class ParticipantModel(BaseModel):
+    email: str
+    name: Optional[str] = None
+    response_status: Optional[str] = None
+
+class CalendarLinkModel(BaseModel):
+    provider: str = "google"
+    event_id: str
+    calendar_id: str
+    html_link: Optional[str] = None
+    last_synced: str
+
+class MeetingCreateRequest(BaseModel):
+    title: str
+    scheduled_at: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    participants: Optional[list[ParticipantModel]] = None
+    expected_duration: Optional[int] = None  # seconds
+    auto_record: bool = False
+    source: str = "manual"
+
+class MeetingFromRecordingRequest(BaseModel):
+    title: str
+    transcription_text: str
+    segments: list[dict]
+    duration: float
+    audio_source: str
+
+class MeetingUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    scheduled_at: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[list[str]] = None
 
 # Model endpoints
 @router.get("/model/status")
@@ -206,5 +247,366 @@ async def update_note(note_id: str, title: Optional[str] = None):
         return note
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== MEETINGS ENDPOINTS ==============
+
+@router.get("/meetings")
+async def list_meetings(status: Optional[str] = None):
+    """List all meetings with optional status filter."""
+    try:
+        meetings = await meetings_service.list_meetings(status_filter=status)
+        return {"meetings": meetings}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/meetings/upcoming")
+async def get_upcoming_meetings():
+    """Get all upcoming (scheduled) meetings."""
+    try:
+        meetings = await meetings_service.get_upcoming_meetings()
+        return {"meetings": meetings}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/meetings/past")
+async def get_past_meetings(limit: int = 50):
+    """Get past (completed) meetings."""
+    try:
+        meetings = await meetings_service.get_past_meetings(limit=limit)
+        return {"meetings": meetings}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/meetings/{meeting_id}")
+async def get_meeting(meeting_id: str):
+    """Get a specific meeting by ID."""
+    try:
+        meeting = await meetings_service.get_meeting(meeting_id)
+        if meeting is None:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        return meeting
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/meetings")
+async def create_meeting(request: MeetingCreateRequest):
+    """Create a new scheduled meeting."""
+    try:
+        participants = None
+        if request.participants:
+            participants = [p.model_dump() for p in request.participants]
+
+        meeting = await meetings_service.create_meeting(
+            title=request.title,
+            scheduled_at=request.scheduled_at,
+            description=request.description,
+            location=request.location,
+            participants=participants,
+            expected_duration=request.expected_duration,
+            auto_record=request.auto_record,
+            source=request.source,
+        )
+        return meeting
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/meetings/from-recording")
+async def create_meeting_from_recording(request: MeetingFromRecordingRequest):
+    """Create a meeting from a completed recording."""
+    try:
+        meeting = await meetings_service.create_meeting_from_recording(
+            title=request.title,
+            transcription_text=request.transcription_text,
+            segments=request.segments,
+            duration=request.duration,
+            audio_source=request.audio_source,
+        )
+        return meeting
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/meetings/{meeting_id}")
+async def update_meeting(meeting_id: str, request: MeetingUpdateRequest):
+    """Update a meeting."""
+    try:
+        updates = {k: v for k, v in request.model_dump().items() if v is not None}
+        meeting = await meetings_service.update_meeting(meeting_id, updates)
+        if meeting is None:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        return meeting
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/meetings/{meeting_id}")
+async def delete_meeting(meeting_id: str):
+    """Delete a meeting."""
+    try:
+        success = await meetings_service.delete_meeting(meeting_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        return {"status": "ok", "message": "Meeting deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/meetings/{meeting_id}/start")
+async def start_meeting(meeting_id: str):
+    """Mark a scheduled meeting as in progress."""
+    try:
+        meeting = await meetings_service.start_meeting(meeting_id)
+        if meeting is None:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        return meeting
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/meetings/{meeting_id}/complete")
+async def complete_meeting(meeting_id: str, request: MeetingFromRecordingRequest):
+    """Complete a meeting with recording data."""
+    try:
+        meeting = await meetings_service.complete_meeting(
+            meeting_id=meeting_id,
+            transcription_text=request.transcription_text,
+            segments=request.segments,
+            duration=request.duration,
+            audio_source=request.audio_source,
+        )
+        if meeting is None:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        return meeting
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/meetings/migrate")
+async def migrate_notes_to_meetings():
+    """Migrate existing notes to meetings format."""
+    try:
+        count = await meetings_service.migrate_notes_to_meetings()
+        return {"status": "ok", "migrated": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== AI SUMMARY ENDPOINTS ==============
+
+@router.get("/summary/status")
+async def get_summary_status():
+    """Get the AI summary model status."""
+    summary_service = get_summary_service()
+    return {
+        "is_loaded": summary_service.is_loaded,
+        "is_loading": summary_service.is_loading,
+        "model_name": SUMMARY_MODEL_NAME
+    }
+
+
+@router.post("/summary/load")
+async def load_summary_model():
+    """Load the AI summary model."""
+    summary_service = get_summary_service()
+    try:
+        success = await summary_service.load_model()
+        if success:
+            return {"status": "ok", "message": "Summary model loaded"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to load summary model")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/meetings/{meeting_id}/summary")
+async def generate_meeting_summary(meeting_id: str):
+    """Generate an AI summary for a meeting."""
+    summary_service = get_summary_service()
+
+    # Get the meeting
+    meeting = await meetings_service.get_meeting(meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Check if meeting has a transcript
+    transcription = meeting.get("transcription")
+    if not transcription or not transcription.get("full_text"):
+        raise HTTPException(status_code=400, detail="Meeting has no transcript to summarize")
+
+    try:
+        # Generate summary
+        summary = await summary_service.generate_summary(
+            transcript=transcription["full_text"],
+            title=meeting.get("title", "")
+        )
+
+        if summary is None:
+            raise HTTPException(status_code=500, detail="Failed to generate summary")
+
+        # Update meeting with summary
+        updated_meeting = await meetings_service.update_meeting(
+            meeting_id,
+            {
+                "summary": summary,
+                "has_summary": True
+            }
+        )
+
+        return {
+            "status": "ok",
+            "summary": summary,
+            "meeting": updated_meeting
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== GOOGLE CALENDAR ENDPOINTS ==============
+
+class CalendarClientConfig(BaseModel):
+    client_config: dict
+
+class CalendarSyncRequest(BaseModel):
+    calendar_id: str = "primary"
+    days_ahead: int = 7
+
+
+@router.get("/calendar/status")
+async def get_calendar_status():
+    """Get Google Calendar connection status."""
+    calendar_service = get_calendar_service()
+    await calendar_service.load_credentials()
+
+    return {
+        "is_connected": calendar_service.is_connected,
+        "has_client_config": calendar_service.has_client_config,
+    }
+
+
+@router.post("/calendar/client-config")
+async def set_calendar_client_config(request: CalendarClientConfig):
+    """Set the Google OAuth client configuration."""
+    calendar_service = get_calendar_service()
+
+    success = calendar_service.set_client_config(request.client_config)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid client configuration")
+
+    return {"status": "ok", "message": "Client configuration saved"}
+
+
+@router.get("/auth/google/url")
+async def get_google_auth_url():
+    """Get the Google OAuth authorization URL."""
+    calendar_service = get_calendar_service()
+
+    auth_url = calendar_service.get_auth_url()
+    if not auth_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Google OAuth client not configured. Please set client config first."
+        )
+
+    return {"auth_url": auth_url}
+
+
+@router.get("/auth/google/callback")
+async def google_auth_callback(code: str):
+    """Handle the Google OAuth callback."""
+    calendar_service = get_calendar_service()
+
+    success = await calendar_service.handle_callback(code)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to authenticate with Google")
+
+    # Return HTML that closes the window and notifies parent
+    return """
+    <html>
+    <body>
+        <script>
+            window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS' }, '*');
+            window.close();
+        </script>
+        <p>Authentication successful! You can close this window.</p>
+    </body>
+    </html>
+    """
+
+
+@router.post("/auth/google/disconnect")
+async def disconnect_google():
+    """Disconnect Google Calendar."""
+    calendar_service = get_calendar_service()
+
+    success = await calendar_service.disconnect()
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to disconnect")
+
+    return {"status": "ok", "message": "Google Calendar disconnected"}
+
+
+@router.get("/calendar/list")
+async def list_calendars():
+    """List available Google Calendars."""
+    calendar_service = get_calendar_service()
+
+    if not await calendar_service.load_credentials():
+        raise HTTPException(status_code=401, detail="Not connected to Google Calendar")
+
+    calendars = await calendar_service.list_calendars()
+    return {"calendars": calendars}
+
+
+@router.get("/calendar/events")
+async def get_calendar_events(calendar_id: str = "primary", days_ahead: int = 7):
+    """Get upcoming events from a calendar."""
+    calendar_service = get_calendar_service()
+
+    if not await calendar_service.load_credentials():
+        raise HTTPException(status_code=401, detail="Not connected to Google Calendar")
+
+    events = await calendar_service.get_upcoming_events(calendar_id, days_ahead)
+    return {"events": events}
+
+
+@router.post("/calendar/sync")
+async def sync_calendar(request: CalendarSyncRequest):
+    """Sync calendar events to meetings."""
+    calendar_service = get_calendar_service()
+
+    if not await calendar_service.load_credentials():
+        raise HTTPException(status_code=401, detail="Not connected to Google Calendar")
+
+    try:
+        synced = await calendar_service.sync_events_to_meetings(
+            request.calendar_id,
+            request.days_ahead
+        )
+        return {
+            "status": "ok",
+            "synced_count": len(synced),
+            "meetings": synced
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

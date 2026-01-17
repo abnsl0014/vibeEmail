@@ -3,14 +3,23 @@ import { NavLink } from 'react-router-dom'
 export default function Sidebar() {
   const navItems = [
     { to: '/', icon: '🎙️', label: 'Record' },
-    { to: '/notes', icon: '📝', label: 'Notes' },
+    { to: '/meetings', icon: '📅', label: 'Meetings' },
   ]
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-      {/* Title bar drag region */}
-      <div className="h-12 titlebar-drag-region flex items-center justify-center border-b border-gray-100">
-        <h1 className="text-lg font-semibold text-gray-800">Voice Notes</h1>
+      {/* Title bar drag region - space for macOS window controls */}
+      <div className="h-12 titlebar-drag-region border-b border-gray-100" />
+
+      {/* Logo section */}
+      <div className="px-4 py-4 flex justify-center">
+        <div className="overflow-hidden rounded-xl">
+          <img
+            src="/logo.png"
+            alt="Neander"
+            className="h-10 object-contain"
+          />
+        </div>
       </div>
 
       {/* Navigation */}
