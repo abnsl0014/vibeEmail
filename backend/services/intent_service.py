@@ -97,14 +97,15 @@ class IntentService:
         text_lower = text.lower()
         if any(w in text_lower for w in ["email", "send", "mail", "write to", "message"]):
             to = ""
-            for trigger in ["to ", "email ", "send "]:
-                if trigger in text_lower:
-                    idx = text_lower.index(trigger) + len(trigger)
-                    remaining = text[idx:].strip()
-                    words = remaining.split()
-                    if words:
-                        to = words[0].strip(",.")
-                    break
+            # Try to find recipient after "email [name]" pattern
+            import re
+            # Pattern: "email <name> about ..."
+            match = re.search(r'(?:email|send|mail|write to|message)\s+(\w+)', text_lower)
+            if match:
+                to = match.group(1).capitalize()
+                # Don't use common words as names
+                if to.lower() in ["about", "regarding", "to", "the", "a", "an"]:
+                    to = ""
 
             subject_hint = ""
             for trigger in ["about ", "regarding ", "re "]:
