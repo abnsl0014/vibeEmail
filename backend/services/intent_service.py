@@ -97,15 +97,26 @@ class IntentService:
         text_lower = text.lower()
         if any(w in text_lower for w in ["email", "send", "mail", "write to", "message"]):
             to = ""
-            # Try to find recipient after "email [name]" pattern
             import re
-            # Pattern: "email <name> about ..."
-            match = re.search(r'(?:email|send|mail|write to|message)\s+(\w+)', text_lower)
+            # Try multiple patterns to find recipient name
+            # "send mail/email to <name>"
+            match = re.search(r'(?:send\s+(?:mail|email|message)\s+to)\s+(\w+)', text_lower)
+            if not match:
+                # "email <name> about ..."
+                match = re.search(r'(?:email|write to|message)\s+(\w+)', text_lower)
+            if not match:
+                # fallback: "to <name>"
+                match = re.search(r'\bto\s+(\w+)', text_lower)
             if match:
                 to = match.group(1).capitalize()
-                # Don't use common words as names
-                if to.lower() in ["about", "regarding", "to", "the", "a", "an"]:
-                    to = ""
+                if to.lower() in ["about", "regarding", "the", "a", "an", "my", "our", "mail", "email"]:
+                    # Try next word
+                    remaining = text_lower[match.end():].strip()
+                    next_match = re.match(r'(?:to\s+)?(\w+)', remaining)
+                    if next_match and next_match.group(1) not in ["about", "regarding", "the", "a", "an"]:
+                        to = next_match.group(1).capitalize()
+                    else:
+                        to = ""
 
             subject_hint = ""
             for trigger in ["about ", "regarding ", "re "]:
