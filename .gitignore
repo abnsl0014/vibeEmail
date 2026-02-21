@@ -34,3 +34,7 @@ npm-debug.log*
 # Cache
 .cache/
 *.tsbuildinfo
+-e 
+# Environment files
+*.env
+*.env.*
