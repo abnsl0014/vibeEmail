@@ -3,95 +3,70 @@ import time
 from pathlib import Path
 from typing import AsyncGenerator
 
+ASR_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+LLM_MODEL = "mlx-community/Llama-3.2-1B-Instruct-4bit"
+
+
 class ModelManager:
-    """Manages model downloading with progress tracking."""
-
-    MODEL_REPO = "mlx-community/parakeet-tdt-0.6b-v2"
-    MODEL_FILES = [
-        "config.json",
-        "model.safetensors",
-        "preprocessor_config.json",
-        "tokenizer.json"
-    ]
-
     def __init__(self):
-        self._cache_dir = self._default_cache_dir()
+        self._cache_dir = str(Path.home() / "VoiceOverlay" / "model-cache")
 
-    def _default_cache_dir(self) -> str:
-        return str(Path.home() / "VoiceNotes" / "model-cache")
-
-    def get_estimated_size(self) -> int:
-        """Get estimated total model size in bytes."""
-        return 640 * 1024 * 1024  # ~640MB
-
-    async def download_model(self) -> AsyncGenerator[dict, None]:
-        """Download model files with progress updates."""
-        from huggingface_hub import hf_hub_download, HfApi
-
-        # Ensure cache directory exists
-        Path(self._cache_dir).mkdir(parents=True, exist_ok=True)
-
-        total_size = self.get_estimated_size()
+    async def download_all_models(self) -> AsyncGenerator[dict, None]:
+        models = [
+            {"name": "Parakeet TDT 0.6B (ASR)", "repo": ASR_MODEL, "size_mb": 2300},
+            {"name": "Llama 3.2 1B Instruct (LLM)", "repo": LLM_MODEL, "size_mb": 680},
+        ]
+        total_size = sum(m["size_mb"] for m in models) * 1024 * 1024
         downloaded = 0
         start_time = time.time()
 
-        api = HfApi()
-
-        for filename in self.MODEL_FILES:
+        for i, model_info in enumerate(models):
             try:
-                # Get file info
-                try:
-                    model_info = api.model_info(self.MODEL_REPO)
-                    file_info = next(
-                        (s for s in model_info.siblings if s.rfilename == filename),
-                        None
-                    )
-                    file_size = file_info.size if file_info and file_info.size else 0
-                except:
-                    file_size = 0
-
-                # Download file
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None,
-                    lambda f=filename: hf_hub_download(
-                        self.MODEL_REPO,
-                        f,
-                        cache_dir=self._cache_dir
-                    )
-                )
-
-                downloaded += file_size if file_size else (total_size // len(self.MODEL_FILES))
-                elapsed = time.time() - start_time
-                speed = downloaded / elapsed if elapsed > 0 else 0
-                remaining = total_size - downloaded
-                eta = remaining / speed if speed > 0 else 0
-
                 yield {
                     "status": "downloading",
-                    "file": filename,
-                    "downloaded_bytes": downloaded,
-                    "total_bytes": total_size,
-                    "percent": min(100, (downloaded / total_size) * 100),
-                    "speed_mbps": speed / (1024 * 1024),
-                    "eta_seconds": eta
+                    "model": model_info["name"],
+                    "model_index": i + 1,
+                    "model_count": len(models),
+                    "percent": round((downloaded / total_size) * 100, 1),
+                    "total_mb": round(total_size / (1024 * 1024)),
                 }
 
+                loop = asyncio.get_event_loop()
+                repo = model_info["repo"]
+                await loop.run_in_executor(None, lambda r=repo: self._download_model(r))
+
+                downloaded += model_info["size_mb"] * 1024 * 1024
+                elapsed = time.time() - start_time
+                speed = downloaded / elapsed if elapsed > 0 else 0
+
+                yield {
+                    "status": "downloaded",
+                    "model": model_info["name"],
+                    "model_index": i + 1,
+                    "model_count": len(models),
+                    "downloaded_mb": round(downloaded / (1024 * 1024)),
+                    "total_mb": round(total_size / (1024 * 1024)),
+                    "percent": round((downloaded / total_size) * 100, 1),
+                    "speed_mbps": round(speed / (1024 * 1024), 1),
+                }
             except Exception as e:
                 yield {
                     "status": "error",
-                    "file": filename,
-                    "message": str(e)
+                    "model": model_info["name"],
+                    "message": str(e),
                 }
                 return
 
-        yield {
-            "status": "complete",
-            "downloaded_bytes": total_size,
-            "total_bytes": total_size,
-            "percent": 100
-        }
+        yield {"status": "complete", "percent": 100}
+
+    def _download_model(self, repo_id: str):
+        try:
+            from huggingface_hub import snapshot_download
+
+            Path(self._cache_dir).mkdir(parents=True, exist_ok=True)
+            snapshot_download(repo_id, cache_dir=self._cache_dir)
+        except ImportError:
+            print(f"huggingface_hub not available, skipping download of {repo_id}")
 
 
-# Singleton instance
 model_manager = ModelManager()
