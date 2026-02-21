@@ -31,7 +31,7 @@ class ParakeetTranscriber:
         self._cache_dir = self._default_cache_dir()
 
     def _default_cache_dir(self) -> str:
-        return str(Path.home() / "VoiceNotes" / "model-cache")
+        return str(Path.home() / "VoiceOverlay" / "model-cache")
 
     @property
     def is_loaded(self) -> bool:
